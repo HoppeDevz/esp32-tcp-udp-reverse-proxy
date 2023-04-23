@@ -43,7 +43,7 @@ export class TcpMiddleware {
 
         if (this.reverseProxyClient !== "NOT_CONNECTED_YET") {
 
-            const packet = { socketId: socket.id, packet: "__SOCKET_DISCONNECTED__" };
+            const packet = { socketId: socket.id, event: "__SOCKET_DISCONNECTED__", packet: [] };
 
             this.reverseProxyClient.send(JSON.stringify(packet));
 
@@ -110,30 +110,32 @@ export class TcpMiddleware {
 
             this.reverseProxyClient = socket;
 
-            socket.addEventListener("message", event => {
+            socket.addEventListener("message", messageEvent => {
 
-                const message = event.data;
+                const message = messageEvent.data;
 
                 if (typeof message !== "string") return;
 
-                const parsedMessage = JSON.parse(message) as { socketId: string, packet: number[] };
-                const targetClient = this.clientsMap.get(parsedMessage.socketId);
-
+                const parsedMessage = JSON.parse(message) as { socketId: string, event: string, packet: number[] };
+                
+                const socketId = parsedMessage.socketId;
+                const event = parsedMessage.event;
                 const packet = Buffer.from(parsedMessage.packet);
-                const stringifyPacked = packet.toString();
 
-                console.log(`[WEBSOCKET-SERVER] - Received message`, { socketId: parsedMessage.socketId, packet, stringifyPacket: packet.toString() });
+                const targetClient = this.clientsMap.get(socketId);
+
+                console.log(`[WEBSOCKET-SERVER] - Received message`, { socketId: socketId, packet, stringifyPacket: packet.toString() });
 
                 try {
 
                     if (targetClient) {
 
-                        if (stringifyPacked === "__SOCKET_DISCONNECTED__") {
+                        if (event === "__SOCKET_DISCONNECTED__") {
 
                             targetClient.end();
                             targetClient.destroy();
 
-                            this.clientsMap.delete(parsedMessage.socketId);
+                            this.clientsMap.delete(socketId);
 
                             return;
                         }
