@@ -96,27 +96,39 @@ export class TcpMiddleware {
 
                 const message = event.data;
 
-                console.log(`[WEBSOCKET-SERVER] - Received message`, message);
-
                 if (typeof message !== "string") return;
 
-                const parsedMessage = JSON.parse(message) as { socketId: string, packet: string };
+                const parsedMessage = JSON.parse(message) as { socketId: string, packet: number[] };
                 const targetClient = this.clientsMap.get(parsedMessage.socketId);
 
-                if (targetClient) {
+                const packet = Buffer.from(parsedMessage.packet);
+                const stringifyPacked = packet.toString();
 
-                    if (parsedMessage.packet === "__SOCKET_DISCONNECTED__") {
+                console.log(`[WEBSOCKET-SERVER] - Received message`, { socketId: parsedMessage.socketId, packet, stringifyPacket: packet.toString() });
 
-                        targetClient.end();
-                        targetClient.destroy();
+                try {
 
-                        this.clientsMap.delete(parsedMessage.socketId);
+                    if (targetClient) {
 
-                        return;
+                        if (stringifyPacked === "__SOCKET_DISCONNECTED__") {
+
+                            targetClient.end();
+                            targetClient.destroy();
+
+                            this.clientsMap.delete(parsedMessage.socketId);
+
+                            return;
+                        }
+
+                        targetClient.write(packet);
+
                     }
 
-                    targetClient.write(parsedMessage.packet);
+                } catch(err) {
+
+                    console.log("Error to send packet", parsedMessage);
                 }
+                
 
             });
 
@@ -126,6 +138,8 @@ export class TcpMiddleware {
 
                 this.reverseProxyClient = "NOT_CONNECTED_YET";
             });
+
+            socket.on("error", err => console.log("[WEBSOCKET-SERVER] - Client error", err));
         });
 
         return websocketServer;
