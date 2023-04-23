@@ -54,11 +54,27 @@ export class TcpMiddleware {
 
         if (this.reverseProxyClient !== "NOT_CONNECTED_YET") {
 
-            const packet = { socketId: socket.id, packet: data.toString() };
 
-            this.reverseProxyClient.send(JSON.stringify(packet));
+            // Each byte is equal 16 bytes on DynamicJsonDocument
+            // let's reserve 100 bytes for the socketId
+            // 1024 - 100 = 924 bytes
+            // 924 / 16 = 57 bytes
 
-            console.log("[WEBSOCKET-SERVER] - Sended packet!", packet);
+            const MAX_PACKET_SIZE = 57;
+
+            while (data.length > 0) {
+
+                const removedBytes = data.slice(0, MAX_PACKET_SIZE);
+                const newBuffer = Buffer.concat([data.slice(0, 0), data.slice(0 + MAX_PACKET_SIZE)]);
+
+                data = newBuffer;
+
+                const packet = { socketId: socket.id, packet: Array.from(removedBytes) };
+
+                console.log("[WEBSOCKET-SERVER] - Sended packet!", packet);
+
+                this.reverseProxyClient.send(JSON.stringify(packet));
+            }
         }
         
     }
@@ -73,6 +89,8 @@ export class TcpMiddleware {
             customSocket.id = socketId;
 
             this.clientsMap.set(socketId, customSocket);
+
+            console.log(`[TCP-SERVER] - Client connected! ${customSocket.id}`);
 
             customSocket.on("data", data => this.onTcpData(customSocket, data));
             customSocket.on("error", err => this.onTcpError(customSocket, err));

@@ -29,9 +29,19 @@ class TcpMiddleware {
     }
     onTcpData(socket, data) {
         if (this.reverseProxyClient !== "NOT_CONNECTED_YET") {
-            const packet = { socketId: socket.id, packet: data.toString() };
-            this.reverseProxyClient.send(JSON.stringify(packet));
-            console.log("[WEBSOCKET-SERVER] - Sended packet!", packet);
+            // Each byte is equal 16 bytes on DynamicJsonDocument
+            // let's reserve 100 bytes for the socketId
+            // 1024 - 100 = 924 bytes
+            // 924 / 16 = 57 bytes
+            const MAX_PACKET_SIZE = 57;
+            while (data.length > 0) {
+                const removedBytes = data.slice(0, MAX_PACKET_SIZE);
+                const newBuffer = Buffer.concat([data.slice(0, 0), data.slice(0 + MAX_PACKET_SIZE)]);
+                data = newBuffer;
+                const packet = { socketId: socket.id, packet: Array.from(removedBytes) };
+                console.log("[WEBSOCKET-SERVER] - Sended packet!", packet);
+                this.reverseProxyClient.send(JSON.stringify(packet));
+            }
         }
     }
     createTcpServer() {
@@ -40,6 +50,7 @@ class TcpMiddleware {
             const socketId = (0, uuid_1.v4)();
             customSocket.id = socketId;
             this.clientsMap.set(socketId, customSocket);
+            console.log(`[TCP-SERVER] - Client connected! ${customSocket.id}`);
             customSocket.on("data", data => this.onTcpData(customSocket, data));
             customSocket.on("error", err => this.onTcpError(customSocket, err));
             customSocket.on("close", hadError => this.onClientDisconnect(customSocket, hadError));
@@ -53,25 +64,33 @@ class TcpMiddleware {
             this.reverseProxyClient = socket;
             socket.addEventListener("message", event => {
                 const message = event.data;
-                console.log(`[WEBSOCKET-SERVER] - Received message`, message);
                 if (typeof message !== "string")
                     return;
                 const parsedMessage = JSON.parse(message);
                 const targetClient = this.clientsMap.get(parsedMessage.socketId);
-                if (targetClient) {
-                    if (parsedMessage.packet === "__SOCKET_DISCONNECTED__") {
-                        targetClient.end();
-                        targetClient.destroy();
-                        this.clientsMap.delete(parsedMessage.socketId);
-                        return;
+                const packet = Buffer.from(parsedMessage.packet);
+                const stringifyPacked = packet.toString();
+                console.log(`[WEBSOCKET-SERVER] - Received message`, { socketId: parsedMessage.socketId, packet, stringifyPacket: packet.toString() });
+                try {
+                    if (targetClient) {
+                        if (stringifyPacked === "__SOCKET_DISCONNECTED__") {
+                            targetClient.end();
+                            targetClient.destroy();
+                            this.clientsMap.delete(parsedMessage.socketId);
+                            return;
+                        }
+                        targetClient.write(packet);
                     }
-                    targetClient.write(parsedMessage.packet);
+                }
+                catch (err) {
+                    console.log("Error to send packet", parsedMessage);
                 }
             });
             socket.on("close", stream => {
                 console.log(`[WEBSOCKET-SERVER] - Client disconnected!`);
                 this.reverseProxyClient = "NOT_CONNECTED_YET";
             });
+            socket.on("error", err => console.log("[WEBSOCKET-SERVER] - Client error", err));
         });
         return websocketServer;
     }
