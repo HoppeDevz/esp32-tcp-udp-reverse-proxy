@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 
 // Endereço do servidor WebSocket
-const url = 'ws://149.56.174.85:3120/ws';
+const url = 'ws://192.168.1.183:3120/ws';
 
 // Cria uma nova instância do WebSocket
 const socket = new WebSocket(url);
